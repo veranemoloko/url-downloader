@@ -1,26 +1,117 @@
-# url-downloader
-URL Downloader is a web service for asynchronous file downloading from the internet. Users can create tasks containing a list of URLs, and the service will download the files into a local folder. The service supports resilience: tasks in progress are saved and resumed after a restart.
+# URL Downloader Documentation
 
-### Features
-- Create download tasks with multiple URLs.
-- Asynchronous processing with a worker pool.
-- Retrieve task status and download progress.
-- Recover incomplete tasks after service restart.
-- Prometheus metrics for monitoring.
+## Как работает URL Downloader
 
-### Architecture
-- The service is implemented in Go using common patterns:
-- HTTP API via chi for creating and querying tasks.
-- Service layer (TaskService, DownloadService) for task and download logic.
-- Task storage — JSON file to persist state across restarts.
-- Worker pool — limits the number of concurrent downloads.
-- Prometheus metrics — number of tasks, successful/failed downloads, download duration and size.
-- Graceful shutdown — proper termination on SIGINT/SIGTERM.
+### 1. Создание задачи
 
-### Restart / Recovery Scenario
-1. Before shutdown, all tasks are persisted to the state file (state.json).
-2. On startup, the service:
-    - Loads tasks with Pending and InProgress status.
-    - Resumes downloads for tasks that were in progress.
-3. New tasks can be submitted at any time, even during recovery.
+**Пошагово:**
 
+1. Клиент отправляет POST запрос на `/tasks` с JSON-массивом URL:
+
+```json
+{"urls": ["https://example.com/file1.txt", "https://example.com/file2.txt"]}
+```
+
+2. API вызывает URL Validator, который проверяет:
+
+   * Схему (http/https)
+   * Запрещённые хосты и приватные IP (например, 127.0.0.1 или 192.168.*.*)
+
+3. Если все URL корректные, создаётся объект Task со статусом `Pending` и уникальным ID.
+
+4. Task помещается в канал событий `eventChan`, чтобы воркеры могли начать обработку.
+
+**Нюансы реализации:**
+
+* Проверка URL защищает от скачивания с локальных или потенциально опасных адресов.
+* Все задачи уникальны по ID и сохраняются на диск сразу (JSON-файлы в `downloads/tasks`), что позволяет восстановить задачи после перезапуска сервера.
+
+### 2. Обработка задачи
+
+**Пошагово:**
+
+1. TaskService читает задачи из канала `eventChan`.
+2. Статус задачи меняется на `InProgress`.
+3. Для каждой ссылки создаётся отдельный DownloadWorker.
+4. Worker делает HTTP-запрос на URL:
+
+   * Если файл уже частично скачан, используется HTTP Range для возобновления загрузки.
+   * Сохраняются имя файла, URL, количество скачанных байт, успех или ошибка.
+5. После завершения всех ссылок статус задачи обновляется на `Completed` или `Failed`.
+
+**Нюансы реализации:**
+
+* Асинхронность: загрузка нескольких файлов идёт параллельно.
+* Resume-механизм: проверяет размер уже скачанного файла и продолжает скачивание без перезаписи.
+* Ошибки сети фиксируются, при необходимости можно добавить retry и таймауты.
+
+### 3. Завершение задачи
+
+**Пошагово:**
+
+1. После скачивания всех файлов TaskService обновляет статус:
+
+   * `Completed` — все файлы успешно скачаны
+   * `Failed` — хотя бы один файл не удалось скачать
+2. Сохраняются результаты в TaskStorage (JSON-файлы с информацией о каждом файле)
+3. Клиент может запросить `/tasks/{id}` для получения текущего статуса и прогресса.
+
+**Нюансы реализации:**
+
+* Локальное хранение удобно для небольших проектов.
+* Структура результатов позволяет легко интегрировать сервис с веб-интерфейсом.
+
+### 4. Получение и мониторинг задач
+
+**Пошагово:**
+
+1. Клиент делает GET `/tasks/{id}`
+2. API возвращает JSON:
+
+```json
+{
+  "id": "36e89351-0c45-4ed6-b724-fc6957ae541b",
+  "status": "InProgress",
+  "results": [
+    {
+      "url": "https://example.com/file1.txt",
+      "filename": "file1.txt",
+      "bytes_read": 102400,
+      "success": false
+    }
+  ]
+}
+```
+
+3. Клиент может повторять запрос для мониторинга прогресса.
+
+**Нюансы реализации:**
+
+* JSON содержит `bytes_read`, удобно для прогресс-бара.
+* Поддержка возобновления загрузки работает даже после перезапуска сервера.
+
+### 5. Основные нюансы реализации
+
+* Модульная архитектура: API → Service → Worker → Storage → Validation.
+* Асинхронная обработка: `eventChan` распределяет задачи между воркерами.
+* Локальное хранилище: JSON + `downloads/files`.
+* Resume и Range-запросы: файлы скачиваются частями.
+* Unit-тесты: покрытие API, TaskService и воркеров.
+
+## Плюсы проекта
+
+* Асинхронная обработка и масштабируемость.
+* Возобновление загрузки после перезапуска или сетевых ошибок.
+* Простая структура локального хранилища.
+* Модульная и тестируемая архитектура.
+* Защита от скачивания с локальных и приватных адресов.
+
+## Возможные улучшения
+
+* Подключение базы данных (PostgreSQL / SQLite) для задач и результатов.
+* Реализация повторных попыток загрузки и таймаутов.
+* Аутентификация и разграничение доступа к задачам.
+* Поддержка удалённого хранилища (S3, MinIO).
+* Веб-интерфейс для мониторинга задач и прогресса.
+* Метрики и логирование через Prometheus / Grafana.
+* Расширение unit-тестов.

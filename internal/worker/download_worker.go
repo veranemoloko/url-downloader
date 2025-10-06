@@ -14,12 +14,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// DownloadWorker is responsible for downloading files from URLs and storing them in FileStorage.
 type DownloadWorker struct {
 	fileStorage *storage.FileStorage
 	httpClient  *http.Client
 	logger      *slog.Logger
 }
 
+// NewDownloadWorker creates a new DownloadWorker with the provided FileStorage and logger.
+// It initializes an HTTP client with a 30-minute timeout.
 func NewDownloadWorker(fileStorage *storage.FileStorage, logger *slog.Logger) *DownloadWorker {
 	return &DownloadWorker{
 		fileStorage: fileStorage,
@@ -30,6 +33,8 @@ func NewDownloadWorker(fileStorage *storage.FileStorage, logger *slog.Logger) *D
 	}
 }
 
+// DownloadURL downloads a single URL and saves it to storage, supporting resume of partial downloads.
+// Returns a DownloadResult with information about the success, bytes read, and errors (if any).
 func (w *DownloadWorker) DownloadURL(ctx context.Context, url string, taskID string) (domain.DownloadResult, error) {
 	result := domain.DownloadResult{
 		URL:     url,
@@ -63,14 +68,23 @@ func (w *DownloadWorker) DownloadURL(ctx context.Context, url string, taskID str
 
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
-		result.Error = fmt.Sprintf("do request: %v", err)
-		w.logger.Error("download failed",
+		result.Error = err.Error()
+		w.logger.Error("download request failed",
 			"url", url,
 			"error", err,
 		)
 		return result, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result.Error = fmt.Sprintf("bad status: %s", resp.Status)
+		w.logger.Error("download failed",
+			"url", url,
+			"status", resp.Status,
+		)
+		return result, fmt.Errorf("bad status: %s", resp.Status)
+	}
 
 	if existingSize > 0 && resp.StatusCode != http.StatusPartialContent {
 		existingSize = 0
@@ -152,6 +166,8 @@ func (w *DownloadWorker) copyWithContext(ctx context.Context, dst *os.File, src 
 	}
 }
 
+// DownloadTask downloads all URLs associated with a task concurrently (limit 5 parallel downloads).
+// Returns a slice of DownloadResult for each URL and an error if any download failed.
 func (w *DownloadWorker) DownloadTask(ctx context.Context, task *domain.Task) ([]domain.DownloadResult, error) {
 	results := make([]domain.DownloadResult, len(task.URLs))
 	g, ctx := errgroup.WithContext(ctx)

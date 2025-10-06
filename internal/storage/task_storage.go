@@ -10,19 +10,14 @@ import (
 	"github.com/veranemoloko/url-downloader/internal/domain"
 )
 
-// type TaskServiceInterface interface {
-// 	CreateTask(urls []string) (*domain.Task, error)
-// 	GetTask(id string) (*domain.Task, error)
-// 	ProcessTask(ctx context.Context, task *domain.Task) error
-// 	Shutdown(ctx context.Context) error
-// }
-
+// TaskStorage provides thread-safe storage and persistence for download tasks.
 type TaskStorage struct {
 	mu    sync.RWMutex
 	dir   string
 	tasks map[string]*domain.Task
 }
 
+// NewTaskStorage creates a new TaskStorage, loading existing tasks from the specified directory.
 func NewTaskStorage(dir string) (*TaskStorage, error) {
 	storage := &TaskStorage{
 		dir:   dir,
@@ -64,32 +59,38 @@ func (s *TaskStorage) loadTasks() error {
 	return nil
 }
 
+// Save stores or updates a task in memory and persists it to disk.
 func (s *TaskStorage) Save(task *domain.Task) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.tasks[task.ID] = task
+	s.mu.Unlock()
+
 	return s.persist(task)
 }
 
+// Get retrieves a task by its ID. Returns an error if the task does not exist.
 func (s *TaskStorage) Get(id string) (*domain.Task, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	task, exists := s.tasks[id]
+	s.mu.RUnlock()
+
 	if !exists {
 		return nil, fmt.Errorf("task not found")
 	}
-	return task, nil
+
+	copyTask := *task
+	return &copyTask, nil
 }
 
+// GetAll returns a slice of all tasks currently stored in memory.
 func (s *TaskStorage) GetAll() []*domain.Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	tasks := make([]*domain.Task, 0, len(s.tasks))
 	for _, task := range s.tasks {
-		tasks = append(tasks, task)
+		copyTask := *task
+		tasks = append(tasks, &copyTask)
 	}
 	return tasks
 }

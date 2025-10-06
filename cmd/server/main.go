@@ -52,7 +52,7 @@ func main() {
 
 	router := chi.NewRouter()
 
-	router.Use(slogMiddleware(logger))
+	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
 	taskHandler := api.NewTaskHandler(taskService)
@@ -89,7 +89,7 @@ func main() {
 	}
 
 	logger.Info("initiating graceful shutdown")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	logger.Info("shutting down HTTP server")
@@ -127,40 +127,6 @@ func setupLogger(logLevel string) *slog.Logger {
 		return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		}))
-	}
-}
-
-func slogMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-
-			next.ServeHTTP(ww, r)
-			duration := time.Since(start)
-			status := ww.Status()
-			if status >= 500 {
-				logger.Warn("HTTP request",
-					"method", r.Method,
-					"path", r.URL.Path,
-					"status", status,
-					"duration_ms", duration.Milliseconds(),
-					"bytes", ww.BytesWritten(),
-					"user_agent", r.UserAgent(),
-					"remote_addr", r.RemoteAddr,
-				)
-			} else {
-				logger.Info("HTTP request",
-					"method", r.Method,
-					"path", r.URL.Path,
-					"status", status,
-					"duration_ms", duration.Milliseconds(),
-					"bytes", ww.BytesWritten(),
-					"user_agent", r.UserAgent(),
-					"remote_addr", r.RemoteAddr,
-				)
-			}
-		})
 	}
 }
 

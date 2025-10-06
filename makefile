@@ -11,7 +11,8 @@ run_jq:
 	go run $(MAIN_FILE) | jq
 
 clean:
-	rm -rf downloads $(APP_NAME)
+	rm -rf downloads/files/*
+	rm -rf downloads/tasks/*
 
 test:
 	go test ./... -v -cover
@@ -21,10 +22,11 @@ test_cover:
 	go tool cover -html=coverage.out -o coverage.html
 
 check:
-	go fmt ./...
+	go fmt ./... || exit 1
+	goimports -w . || exit 1
 	go vet ./... || exit 1
-	goimports -w .
 	golangci-lint run ./... || exit 1
+	gosec ./... || exit 1
 	govulncheck ./... || exit 1
 	go test -race ./... || exit 1
 

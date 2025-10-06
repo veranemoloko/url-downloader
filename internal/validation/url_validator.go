@@ -16,6 +16,8 @@ func init() {
 	_ = validate.RegisterValidation("safe_url", validateSafeURL)
 }
 
+// ValidateURLs checks whether each URL in the slice is valid and safe.
+// Returns an error if any URL is invalid or unsafe.
 func ValidateURLs(urls []string) error {
 	for _, u := range urls {
 		if err := validate.Var(u, "required,safe_url"); err != nil {
@@ -25,6 +27,8 @@ func ValidateURLs(urls []string) error {
 	return nil
 }
 
+// validateSafeURL is a custom validator function to ensure URLs are safe.
+// It checks for valid schemes (http/https) and disallows private or loopback addresses.
 func validateSafeURL(fl validator.FieldLevel) bool {
 	urlStr := fl.Field().String()
 

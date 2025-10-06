@@ -15,11 +15,12 @@ import (
 var validate = validator.New()
 
 type TaskHandler struct {
-	service *service.TaskService
+	service service.TaskServiceInterface
 }
 
-func NewTaskHandler(service *service.TaskService) *TaskHandler {
-	return &TaskHandler{service: service}
+// NewTaskHandler creates a new TaskHandler with the provided TaskServiceInterface.
+func NewTaskHandler(s service.TaskServiceInterface) *TaskHandler {
+	return &TaskHandler{service: s}
 }
 
 type CreateTaskRequest struct {
@@ -35,6 +36,8 @@ type TaskResponse struct {
 	UpdatedAt string                  `json:"updated_at"`
 }
 
+// CreateTask handles HTTP POST requests to create a new download task.
+// It validates the input URLs and returns the created task in the response.
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	var req CreateTaskRequest
 
@@ -70,9 +73,13 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+	}
 }
 
+// GetTask handles HTTP GET requests to retrieve a task by its ID.
+// Returns the task details including status and download results.
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "id")
 	if taskID == "" {
@@ -96,18 +103,24 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+	}
 }
 
-func sendError(w http.ResponseWriter, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
-
+// RegisterRoutes registers the HTTP routes for task operations (create and get).
 func (h *TaskHandler) RegisterRoutes(router chi.Router) {
 	router.Route("/tasks", func(r chi.Router) {
 		r.Post("/", h.CreateTask)
 		r.Get("/{id}", h.GetTask)
 	})
+}
+
+// sendError is an internal helper function to send a JSON error response.
+func sendError(w http.ResponseWriter, message string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		http.Error(w, "failed to encode error response", http.StatusInternalServerError)
+	}
 }

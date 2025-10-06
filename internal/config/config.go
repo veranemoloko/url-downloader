@@ -15,9 +15,12 @@ type Config struct {
 	TaskDir       string
 	MaxWorkers    int
 	SaveInterval  time.Duration
-	LogLevel      string // ← ДОБАВИЛИ LOG_LEVEL
+	LogLevel      string
 }
 
+// Load reads environment variables (optionally from a .env file) and
+// returns a Config struct with default values applied if variables are missing.
+// It also ensures that the download and task directories exist.
 func Load() (*Config, error) {
 
 	if err := godotenv.Load(); err != nil {
@@ -30,7 +33,7 @@ func Load() (*Config, error) {
 		TaskDir:       getEnv("TASK_DIR", "downloads/tasks"),
 		MaxWorkers:    getEnvAsInt("MAX_WORKERS", 5),
 		SaveInterval:  getEnvAsDuration("SAVE_INTERVAL", time.Second*10),
-		LogLevel:      getEnv("LOG_LEVEL", "INFO"), // ← ДОБАВИЛИ ЗДЕСЬ
+		LogLevel:      getEnv("LOG_LEVEL", "INFO"),
 	}
 
 	if err := os.MkdirAll(cfg.DownloadDir, 0755); err != nil {

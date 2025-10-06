@@ -13,6 +13,12 @@ import (
 	"github.com/veranemoloko/url-downloader/internal/worker"
 )
 
+// TaskServiceInterface defines the public methods for managing tasks.
+type TaskServiceInterface interface {
+	CreateTask(urls []string) (*domain.Task, error)
+	GetTask(id string) (*domain.Task, error)
+}
+
 type TaskService struct {
 	taskStorage  *storage.TaskStorage
 	fileStorage  *storage.FileStorage
@@ -23,6 +29,8 @@ type TaskService struct {
 	shutdownChan chan struct{}
 }
 
+// NewTaskService creates and returns a new TaskService instance with the provided storages, worker, and logger.
+// It also starts the internal event processor for task events.
 func NewTaskService(
 	taskStorage *storage.TaskStorage,
 	fileStorage *storage.FileStorage,
@@ -44,6 +52,7 @@ func NewTaskService(
 	return service
 }
 
+// CreateTask creates a new task, triggers a creation event, and returns the created task.
 func (s *TaskService) CreateTask(urls []string) (*domain.Task, error) {
 	task := &domain.Task{
 		ID:        generateID(),
@@ -69,10 +78,13 @@ func (s *TaskService) CreateTask(urls []string) (*domain.Task, error) {
 	}
 }
 
+// GetTask retrieves a task by its ID from the storage.
 func (s *TaskService) GetTask(id string) (*domain.Task, error) {
 	return s.taskStorage.Get(id)
 }
 
+// ProcessTask processes a task: updates its status, downloads URLs using the worker,
+// and updates the task results and status accordingly.
 func (s *TaskService) ProcessTask(ctx context.Context, task *domain.Task) error {
 	s.logger.Info("start processing task",
 		"task_id", task.ID,
@@ -249,7 +261,13 @@ func (s *TaskService) eventProcessor() {
 								task.Status = *event.Updates.Status
 							}
 							task.UpdatedAt = time.Now()
-							s.taskStorage.Save(task)
+							if err := s.taskStorage.Save(task); err != nil {
+								s.logger.Error("failed to save task update",
+									"error", err,
+									"task_id", event.TaskID,
+									"status", task.Status,
+								)
+							}
 						}
 					}
 				default:
@@ -260,11 +278,12 @@ func (s *TaskService) eventProcessor() {
 	}
 }
 
+// Shutdown gracefully shuts down the TaskService, waiting for all in-progress tasks to complete.
+// It closes internal channels and logs shutdown progress.
 func (s *TaskService) Shutdown(ctx context.Context) error {
 	s.logger.Info("shutting down task service")
 
 	close(s.shutdownChan)
-	close(s.eventChan)
 
 	done := make(chan struct{})
 	go func() {
@@ -274,12 +293,16 @@ func (s *TaskService) Shutdown(ctx context.Context) error {
 
 	select {
 	case <-done:
-		s.logger.Info("task service shutdown completed")
-		return nil
+		s.logger.Info("all workers completed")
 	case <-ctx.Done():
-		s.logger.Warn("task service shutdown timed out")
+		s.logger.Warn("timeout while waiting for workers")
 		return ctx.Err()
 	}
+
+	close(s.eventChan)
+
+	s.logger.Info("task service shutdown completed")
+	return nil
 }
 
 func generateID() string {
