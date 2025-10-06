@@ -23,3 +23,4 @@ URL Downloader is a web service for asynchronous file downloading from the inter
     - Loads tasks with Pending and InProgress status.
     - Resumes downloads for tasks that were in progress.
 3. New tasks can be submitted at any time, even during recovery.
+

@@ -2,24 +2,49 @@ package domain
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
-// Task represents a download task containing multiple URLs and their statuses.
+type TaskStatus string
+
+const (
+	StatusPending    TaskStatus = "pending"
+	StatusInProgress TaskStatus = "inprogress"
+	StatusCompleted  TaskStatus = "completed"
+	StatusFailed     TaskStatus = "failed"
+)
+
 type Task struct {
-	ID        uuid.UUID      `json:"task_id"`
-	Status    TaskStatus     `json:"status"`
-	URLs      []string       `json:"urls"`
-	Downloads []DownloadItem `json:"downloads"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID        string           `json:"id"`
+	URLs      []string         `json:"urls"`
+	Status    TaskStatus       `json:"status"`
+	Results   []DownloadResult `json:"results,omitempty"`
+	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
 }
 
-// DownloadItem represents a single URL download and its current status.
-type DownloadItem struct {
-	URL      string         `json:"url"`
-	Status   DownloadStatus `json:"status"`
-	FilePath string         `json:"file_path,omitempty"`
-	Error    string         `json:"error,omitempty"`
+type DownloadResult struct {
+	URL       string `json:"url"`
+	FileName  string `json:"file_name,omitempty"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
+	BytesRead int64  `json:"bytes_read"`
+}
+
+type TaskEvent struct {
+	Type    EventType
+	TaskID  string
+	Task    *Task
+	Updates *TaskUpdate
+}
+
+type EventType string
+
+const (
+	EventCreateTask EventType = "create"
+	EventUpdateTask EventType = "update"
+)
+
+type TaskUpdate struct {
+	Status  *TaskStatus
+	Results []DownloadResult
 }

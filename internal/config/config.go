@@ -2,59 +2,68 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
-// Config holds all application configuration settings.
 type Config struct {
-	Environment string `envconfig:"FD_ENV" default:"development"`
-
-	HTTPPort    int           `envconfig:"FD_HTTP_PORT" default:"8080"`
-	HTTPTimeout time.Duration `envconfig:"FD_HTTP_TIMEOUT" default:"15s"`
-
-	WorkerPoolSize  int           `envconfig:"FD_WORKER_POOL_SIZE" default:"5"`
-	MaxURLsPerTask  int           `envconfig:"FD_MAX_URLS_PER_TASK" default:"10"`
-	DownloadTimeout time.Duration `envconfig:"FD_DOWNLOAD_TIMEOUT" default:"5m"`
-	MaxFileSize     int64         `envconfig:"FD_MAX_FILE_SIZE" default:"104857600"`
-
-	DownloadDir string `envconfig:"FD_DOWNLOAD_DIR" default:"./storage"`
-	StateFile   string `envconfig:"FD_STATE_FILE" default:"./state.json"`
-	TempDir     string `envconfig:"FD_TEMP_DIR" default:"./tmp"`
-
-	ShutdownTimeout time.Duration `envconfig:"FD_SHUTDOWN_TIMEOUT" default:"30s"`
-
-	LogLevel  string `envconfig:"FD_LOG_LEVEL" default:"info"`
-	LogFormat string `envconfig:"FD_LOG_FORMAT" default:"json"`
+	ServerAddress string
+	DownloadDir   string
+	TaskDir       string
+	MaxWorkers    int
+	SaveInterval  time.Duration
+	LogLevel      string // ← ДОБАВИЛИ LOG_LEVEL
 }
 
-// Validate checks the configuration for invalid or missing values.
-// Returns an error describing the first invalid setting found.
-func (c *Config) Validate() error {
-	if c.HTTPPort <= 0 || c.HTTPPort > 65535 {
-		return fmt.Errorf("invalid HTTP port: %d", c.HTTPPort)
+func Load() (*Config, error) {
+
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("Note: .env file not found, using defaults")
 	}
 
-	if c.WorkerPoolSize <= 0 {
-		return fmt.Errorf("worker pool size must be positive: %d", c.WorkerPoolSize)
+	cfg := &Config{
+		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
+		DownloadDir:   getEnv("DOWNLOAD_DIR", "downloads/files"),
+		TaskDir:       getEnv("TASK_DIR", "downloads/tasks"),
+		MaxWorkers:    getEnvAsInt("MAX_WORKERS", 5),
+		SaveInterval:  getEnvAsDuration("SAVE_INTERVAL", time.Second*10),
+		LogLevel:      getEnv("LOG_LEVEL", "INFO"), // ← ДОБАВИЛИ ЗДЕСЬ
 	}
 
-	if c.MaxURLsPerTask <= 0 {
-		return fmt.Errorf("max URLs per task must be positive: %d", c.MaxURLsPerTask)
+	if err := os.MkdirAll(cfg.DownloadDir, 0755); err != nil {
+		return nil, fmt.Errorf("create download dir: %w", err)
+	}
+	if err := os.MkdirAll(cfg.TaskDir, 0755); err != nil {
+		return nil, fmt.Errorf("create task dir: %w", err)
 	}
 
-	if c.MaxFileSize <= 0 {
-		return fmt.Errorf("max file size must be positive: %d", c.MaxFileSize)
-	}
+	return cfg, nil
+}
 
-	if c.DownloadDir == "" {
-		return fmt.Errorf("download directory cannot be empty")
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	if c.StateFile == "" {
-		return fmt.Errorf("state file cannot be empty")
-	}
-	if c.TempDir == "" {
-		return fmt.Errorf("temp directory cannot be empty")
-	}
+	return defaultValue
+}
 
-	return nil
+func getEnvAsInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
 }

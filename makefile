@@ -7,27 +7,26 @@ build:
 run:
 	go run $(MAIN_FILE)
 
-clean:
-	rm -rf storage tmp $(APP_NAME)
+run_jq:
+	go run $(MAIN_FILE) | jq
 
-# ------------------ tests
+clean:
+	rm -rf downloads $(APP_NAME)
+
 test:
 	go test ./... -v -cover
 
-# ------------------ checks
+test_cover:
+	go test ./... -coverprofile=coverage.out
+	go tool cover -html=coverage.out -o coverage.html
 
-fmt:
+check:
 	go fmt ./...
-
-vet:
-	go vet ./...
-
-imports:
+	go vet ./... || exit 1
 	goimports -w .
+	golangci-lint run ./... || exit 1
+	govulncheck ./... || exit 1
+	go test -race ./... || exit 1
 
-lint:
-	golangci-lint run ./...
 
-check: fmt vet imports lint 
-
-.PHONY: build run fmt vet imports lint test check
+.PHONY: build run test test_cover check clean
